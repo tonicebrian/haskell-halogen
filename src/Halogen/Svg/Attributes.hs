@@ -1,6 +1,11 @@
-module Halogen.Svg.Attributes (module Halogen.Svg.Attributes) where
+module Halogen.Svg.Attributes
+  ( module Halogen.Svg.Attributes
+  , Color
+  , FontSize
+  , Transformation
+  ) where
 
-import Clay hiding (Baseline, attr, map, max)
+import Clay hiding (Baseline, attr, map, max, transform)
 import Data.Coerce
 import Data.Row
 import Data.Text qualified as T
@@ -56,6 +61,49 @@ newtype PathCommand = PathCommand Text
 
 instance Show PathCommand where
   show (PathCommand txt) = toS txt
+
+-- | Whether a path command uses absolute (uppercase) or relative
+-- (lowercase) coordinates. Mirrors PS
+-- @Halogen.Svg.Attributes.CommandPositionReference@.
+data CommandPositionReference = Abs | Rel
+  deriving (Eq, Show)
+
+posCase :: CommandPositionReference -> Text -> Text
+posCase Abs = identity
+posCase Rel = T.toLower
+
+-- | @M@ \/ @m@ (moveto). Smart constructor for 'PathCommand' — pairs with
+-- 'd' to build a @<path d=\"…\">@.
+m :: CommandPositionReference -> Double -> Double -> PathCommand
+m pos x_ y_ =
+  PathCommand (posCase pos "M" <> " " <> show x_ <> " " <> show y_)
+
+-- | @L@ \/ @l@ (lineto).
+l :: CommandPositionReference -> Double -> Double -> PathCommand
+l pos x_ y_ =
+  PathCommand (posCase pos "L" <> " " <> show x_ <> " " <> show y_)
+
+-- | @Q@ \/ @q@ (quadratic Bézier with control point @cx@, @cy@).
+q
+  :: CommandPositionReference
+  -> Double  -- ^ control point x
+  -> Double  -- ^ control point y
+  -> Double  -- ^ end point x
+  -> Double  -- ^ end point y
+  -> PathCommand
+q pos cx_ cy_ x_ y_ =
+  PathCommand
+    ( posCase pos "Q"
+        <> " " <> show cx_
+        <> " " <> show cy_
+        <> " " <> show x_
+        <> " " <> show y_
+    )
+
+-- | @Z@ (close-path). No relative form — SVG treats @z@ and @Z@
+-- identically.
+z :: PathCommand
+z = PathCommand "Z"
 
 --------------------------------------------------------------------------------
 
@@ -357,7 +405,7 @@ preserveAspectRatio align slice =
       Nothing -> "none"
       Just (x_, y_) -> T.intercalate "" $ ["x", show x_, "Y", show y_]
 
-r :: forall r i. (HasType "r" Text r) => Double -> IProp r i
+r :: forall r i. (HasType "r" Double r) => Double -> IProp r i
 r = attr (H.AttrName "r") . show
 
 refX :: forall r i. (HasType "refX" Text r) => Double -> IProp r i
@@ -369,10 +417,10 @@ refY = attr (H.AttrName "refY") . show
 repeatCount :: forall r i. (HasType "repeatCount" Text r) => Text -> IProp r i
 repeatCount = attr (H.AttrName "repeatCount")
 
-rx :: forall r i. (HasType "rx" Text r) => Double -> IProp r i
+rx :: forall r i. (HasType "rx" Double r) => Double -> IProp r i
 rx = attr (H.AttrName "rx") . show
 
-ry :: forall r i. (HasType "ry" Text r) => Double -> IProp r i
+ry :: forall r i. (HasType "ry" Double r) => Double -> IProp r i
 ry = attr (H.AttrName "ry") . show
 
 stroke :: forall r i. (HasType "stroke" Text r) => Color -> IProp r i
@@ -398,14 +446,50 @@ strokeMiterLimit = attr (H.AttrName "stroke-miterlimit") . show . max 1.0
 strokeOpacity :: forall r i. (HasType "strokeOpacity" Text r) => Double -> IProp r i
 strokeOpacity = attr (H.AttrName "stroke-opacity") . show
 
-strokeWidth :: forall r i. (HasType "strokeWidth" Text r) => Double -> IProp r i
+strokeWidth :: forall r i. (HasType "strokeWidth" Double r) => Double -> IProp r i
 strokeWidth = attr (H.AttrName "stroke-width") . show
 
 textAnchor :: forall r i. (HasType "textAnchor" Text r) => TextAnchor -> IProp r i
 textAnchor = attr (H.AttrName "text-anchor") . printTextAnchor
 
-transformation :: forall r i. (HasType "Transformation" Text r) => [Transformation] -> IProp r i
-transformation = attr (H.AttrName "Transformation") . T.unwords . map renderValue
+-- | SVG @transform@ list. Modelled as a closed ADT (PS-compatible) rather
+-- than Clay's CSS @Transformation@ — Clay's constructor isn't exported, so
+-- consumers can't build their own values, and Clay's @rotate@ doesn't
+-- take a centre-of-rotation pair the way SVG's @rotate(angle x y)@ does.
+data Transform
+  = Rotate Double Double Double
+    -- ^ @rotate(angle x y)@ — angle in degrees, rotation centre @(x, y)@
+  | Translate Double Double
+    -- ^ @translate(tx ty)@
+  | Scale Double Double
+    -- ^ @scale(sx sy)@
+  | SkewX Double
+    -- ^ @skewX(angle)@ — angle in degrees
+  | SkewY Double
+    -- ^ @skewY(angle)@ — angle in degrees
+  | Matrix Double Double Double Double Double Double
+    -- ^ @matrix(a b c d e f)@
+  deriving (Eq, Show)
+
+printTransform :: Transform -> Text
+printTransform = \case
+  Rotate ang x_ y_ ->
+    "rotate(" <> T.intercalate " " [show ang, show x_, show y_] <> ")"
+  Translate tx ty ->
+    "translate(" <> show tx <> " " <> show ty <> ")"
+  Scale sx sy ->
+    "scale(" <> show sx <> " " <> show sy <> ")"
+  SkewX ang -> "skewX(" <> show ang <> ")"
+  SkewY ang -> "skewY(" <> show ang <> ")"
+  Matrix m00 m01 m10 m11 mx my ->
+    "matrix("
+      <> T.intercalate " " [show m00, show m01, show m10, show m11, show mx, show my]
+      <> ")"
+
+-- | Typed setter for the SVG @transform@ attribute. Accepts a list of
+-- 'Transform' values which are space-concatenated.
+transform :: forall r i. (HasType "transform" Text r) => [Transform] -> IProp r i
+transform = attr (H.AttrName "transform") . T.unwords . map printTransform
 
 viewBox
   :: forall r i
@@ -418,16 +502,16 @@ viewBox
 viewBox x_ y_ w h_ =
   attr (H.AttrName "viewBox") (T.unwords $ map show [x_, y_, w, h_])
 
-width :: forall r i. (HasType "width" Text r) => Double -> IProp r i
+width :: forall r i. (HasType "width" Double r) => Double -> IProp r i
 width = attr (H.AttrName "width") . show
 
-height :: forall r i. (HasType "height" Text r) => Double -> IProp r i
+height :: forall r i. (HasType "height" Double r) => Double -> IProp r i
 height = attr (H.AttrName "height") . show
 
-x :: forall r i. (HasType "x" Text r) => Double -> IProp r i
+x :: forall r i. (HasType "x" Double r) => Double -> IProp r i
 x = attr (H.AttrName "x") . show
 
-y :: forall r i. (HasType "y" Text r) => Double -> IProp r i
+y :: forall r i. (HasType "y" Double r) => Double -> IProp r i
 y = attr (H.AttrName "y") . show
 
 x1 :: forall r i. (HasType "x1" Text r) => Double -> IProp r i
