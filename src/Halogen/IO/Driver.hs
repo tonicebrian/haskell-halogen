@@ -11,7 +11,6 @@ import Control.Monad.Parallel
 import Control.Monad.UUID
 import Data.NT
 import Data.Row
-import Debug.Trace qualified
 import HPrelude hiding (get)
 import Halogen.Component
 import Halogen.Data.Slot qualified as Slot
@@ -98,9 +97,8 @@ runUI RenderSpec {..} c i = do
     render' lchs var =
       readIORef var >>= \ds -> do
         shouldProcessHandlers <- isNothing <$> readIORef ds.pendingHandlers
-        liftIO (Debug.Trace.traceIO ("[T28] render.enter shouldProcess=" <> show shouldProcessHandlers))  -- [T28] ticket 28
         if not shouldProcessHandlers
-          then do
+          then
             -- Re-entrancy guard. A render is already in progress on THIS
             -- DriverState (pendingHandlers is non-empty). Under the GHC-JS
             -- cooperative scheduler the in-progress render yields at the reuse
@@ -113,7 +111,6 @@ runUI RenderSpec {..} c i = do
             -- pass: it re-reads the latest state, so the requested render is never
             -- lost. PureScript's Aff driver never preempts mid-render and so needs
             -- no such guard; the GHC-JS scheduler does. haskell-hispania #27.
-            liftIO (Debug.Trace.traceIO "[T28] render.GUARD set-dirty (re-entrant)")  -- [T28] ticket 28
             atomicWriteIORef ds.renderDirty True
           else do
             -- Render passes repeat until no re-entrant render was requested. Each
@@ -121,7 +118,6 @@ runUI RenderSpec {..} c i = do
             -- + handler drain, so any re-entrant render observes the lock and only
             -- sets renderDirty rather than corrupting this walk.
             let renderPass = do
-                  liftIO (Debug.Trace.traceIO "[T28] render.pass.begin")  -- [T28] ticket 28
                   atomicWriteIORef ds.pendingHandlers (Just [])
                   atomicWriteIORef ds.renderDirty False
                   -- Re-read for the latest state / children / rendering each pass.
@@ -137,14 +133,12 @@ runUI RenderSpec {..} c i = do
                       childHandler :: act -> m ()
                       childHandler = Eval.queueOrRun ds.pendingQueries . handler . Input.Action
 
-                  liftIO (Debug.Trace.traceIO "[T28] render.walk.begin")  -- [T28] ticket 28
                   rendering <-
                     render
                       handler
                       (renderChild' lchs childHandler childrenInRef childrenOutRef)
                       (cur.component.render cur.state)
                       cur.rendering
-                  liftIO (Debug.Trace.traceIO "[T28] render.walk.end")  -- [T28] ticket 28
 
                   children <- readIORef childrenOutRef
                   childrenIn <- readIORef childrenInRef
@@ -156,10 +150,8 @@ runUI RenderSpec {..} c i = do
 
                   atomicModifyIORef'_ ds.selfRef $ \ds' ->
                     ds' {rendering = Just rendering, children = children}
-                  liftIO (Debug.Trace.traceIO "[T28] render.children-committed")  -- [T28] ticket 28
 
                   flip loopM () $ \_ -> do
-                    liftIO (Debug.Trace.traceIO "[T28] render.loop.iter")  -- [T28] ticket 28
                     handlers <- readIORef ds.pendingHandlers
                     atomicWriteIORef ds.pendingHandlers (Just [])
                     traverse_ (traverse_ fork . reverse) handlers
@@ -167,10 +159,8 @@ runUI RenderSpec {..} c i = do
                     if maybe False null mmore
                       then atomicWriteIORef ds.pendingHandlers Nothing $> Right ()
                       else pure $ Left ()
-                  liftIO (Debug.Trace.traceIO "[T28] render.loop.end")  -- [T28] ticket 28
 
                   dirty <- readIORef ds.renderDirty
-                  liftIO (Debug.Trace.traceIO ("[T28] render.dirty=" <> show dirty))  -- [T28] ticket 28
                   when dirty renderPass
             renderPass
 
