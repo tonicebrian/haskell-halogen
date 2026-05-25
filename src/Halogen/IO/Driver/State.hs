@@ -33,13 +33,16 @@ data DriverState m r s f act ps i o = DriverState
   , state :: s
   , refs :: Map Text Element
   , children :: SlotStorage ps (DriverStateRef m r)
-  , childrenIn :: IORef (SlotStorage ps (DriverStateRef m r))
-  , childrenOut :: IORef (SlotStorage ps (DriverStateRef m r))
   , selfRef :: IORef (DriverState m r s f act ps i o)
   , handlerRef :: IORef (o -> m ())
   , pendingQueries :: IORef (Maybe [m ()])
   , pendingOuts :: IORef (Maybe [m ()])
   , pendingHandlers :: IORef (Maybe [m ()])
+  , -- | Set when a render is requested re-entrantly while one is already in
+    -- progress on this DriverState (see @render'@ in "Halogen.IO.Driver"). The
+    -- in-progress render re-runs its walk once it observes this, so a render
+    -- triggered by a state change that lands mid-render is never dropped.
+    renderDirty :: IORef Bool
   , rendering :: Maybe (r s act ps o)
   , fresh :: IORef Int
   , subscriptions :: IORef (Maybe (Map SubscriptionId (HS.Subscription m)))
@@ -89,12 +92,11 @@ initDriverState
   -> m (DriverState m r s f act ps i o)
 initDriverState component input handler lchs = do
   selfRef <- newIORef (fix identity)
-  childrenIn <- newIORef SlotStorage.empty
-  childrenOut <- newIORef SlotStorage.empty
   handlerRef <- newIORef handler
   pendingQueries <- newIORef (Just [])
   pendingOuts <- newIORef (Just [])
   pendingHandlers <- newIORef Nothing
+  renderDirty <- newIORef False
   fresh <- newIORef 1
   subscriptions <- newIORef (Just mempty)
   forks <- newIORef mempty
@@ -105,13 +107,12 @@ initDriverState component input handler lchs = do
           , state
           , refs = mempty
           , children = SlotStorage.empty
-          , childrenIn
-          , childrenOut
           , selfRef
           , handlerRef
           , pendingQueries
           , pendingOuts
           , pendingHandlers
+          , renderDirty
           , rendering = Nothing
           , fresh
           , subscriptions
