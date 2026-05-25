@@ -10,7 +10,6 @@ import Control.Monad.Parallel
 import Control.Monad.UUID
 import Data.Coerce
 import Data.Foreign
-import Debug.Trace qualified
 import HPrelude
 import Halogen.Component
 import Halogen.HTML.Core (HTML (..))
@@ -155,34 +154,21 @@ renderSpec document container =
       -> m (RenderState m state action slots output)
     render handler child (HTML vdom) =
       \case
-        -- [T28] DEBUG instrumentation (haskell-hispania ticket 28). The IO
-        -- driver already brackets this whole call with render.walk.begin/end;
-        -- these once-per-render markers split the reuse path's interior so a
-        -- single headed run discriminates a VDom-diff hang (V.step) from a
-        -- DOM-API hang (parentNode/nextSibling/insertBefore). traceIO works
-        -- under GHC-JS. Remove with the rest of the [T28] markers once the
-        -- round-transition freeze is localised.
         Nothing -> do
-          liftIO (Debug.Trace.traceIO "[T28] vdom.fresh.enter")
           renderChildRef <- newIORef child
           let spec = mkSpec handler renderChildRef document
           machine <- V.buildVDom spec vdom
-          liftIO (Debug.Trace.traceIO "[T28] vdom.fresh.build-done")
           let node = V.extract machine
           void $ DOM.appendChild node $ toParentNode $ toNode container
           pure $ RenderState {machine, node, renderChildRef}
         Just (RenderState {machine, node, renderChildRef}) -> do
-          liftIO (Debug.Trace.traceIO "[T28] vdom.reuse.enter")
           atomicWriteIORef renderChildRef child
           parent <- DOM.parentNode node
           nextSib <- DOM.nextSibling node
-          liftIO (Debug.Trace.traceIO "[T28] vdom.reuse.dom-reads-done")
           machine' <- V.step machine vdom
-          liftIO (Debug.Trace.traceIO "[T28] vdom.reuse.step-done")
           let newNode = V.extract machine'
           unless (node `unsafeRefEq` newNode)
             $ substInParent newNode nextSib parent
-          liftIO (Debug.Trace.traceIO "[T28] vdom.reuse.subst-done")
           pure $ RenderState {machine = machine', node = newNode, renderChildRef}
 
 removeChild :: forall m state action slots output. (DOM.MonadDOM m) => RenderState m state action slots output -> m ()
