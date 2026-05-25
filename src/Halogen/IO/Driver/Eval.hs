@@ -18,6 +18,7 @@ import Data.Foreign
 import Data.Functor.Coyoneda
 import Data.Map.Strict qualified as M
 import Data.NT
+import Debug.Trace qualified
 import HPrelude hiding (Concurrently, finally, join, runConcurrently, state)
 import Halogen.Component
 import Halogen.IO.Driver.State
@@ -77,13 +78,23 @@ evalM render initRef (HalogenM hm) = foldF (go initRef) hm
       -> m x
     go ref = \case
       State f -> do
+        -- [T28] DEBUG instrumentation (haskell-hispania ticket 28). Remove once
+        -- the GHC-JS round-transition freeze is localised. traceIO works under
+        -- GHC-JS (Protolude traceM is a no-op there); markers surface in the
+        -- browser console stream the Selenium suite captures.
+        liftIO (Debug.Trace.traceIO "[T28] State.enter")
         st@DriverState {state, lifecycleHandlers} <- readIORef ref
         case f state of
-          (a, state')
-            | unsafeRefEq state state' -> pure a
-            | otherwise -> do
+          (a, state') -> do
+            let same = unsafeRefEq state state'
+            liftIO (Debug.Trace.traceIO ("[T28] State.feval refeq=" <> show same))
+            if same
+              then pure a
+              else do
                 atomicWriteIORef ref (st {state = state'})
+                liftIO (Debug.Trace.traceIO "[T28] State.wrote pre-handleLifecycle")
                 handleLifecycle lifecycleHandlers (render lifecycleHandlers ref)
+                liftIO (Debug.Trace.traceIO "[T28] State.post-handleLifecycle")
                 pure a
       Subscribe fes k -> do
         sid <- fresh SubscriptionId ref
@@ -162,9 +173,13 @@ handleLifecycle :: (MonadIO m, MonadParallel m, MonadFork m) => IORef (Lifecycle
 handleLifecycle lchs f = do
   atomicWriteIORef lchs $ LifecycleHandlers {initializers = [], finalizers = []}
   result <- f
+  liftIO (Debug.Trace.traceIO "[T28] lifecycle.render-returned")  -- [T28] ticket 28
   LifecycleHandlers {initializers, finalizers} <- readIORef lchs
+  liftIO (Debug.Trace.traceIO ("[T28] lifecycle.counts fin=" <> show (length finalizers) <> " init=" <> show (length initializers)))
   traverse_ fork finalizers
+  liftIO (Debug.Trace.traceIO "[T28] lifecycle.forked-finalizers")
   parSequence_ initializers
+  liftIO (Debug.Trace.traceIO "[T28] lifecycle.parseq-done")
   pure result
 
 {-# SPECIALIZE fresh :: (Int -> a) -> IORef (DriverState IO r s f act ps i o) -> IO a #-}
