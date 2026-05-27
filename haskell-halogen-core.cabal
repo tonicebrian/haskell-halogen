@@ -195,3 +195,20 @@ test-suite Halogen-core-test
     hs-source-dirs:   test
     main-is:          Test.hs
     build-depends:    protolude, haskell-halogen-core, hspec
+
+-- Native (non-JavaScript) unit tests. The suite above is GHC-JS only
+-- (it uses `foreign import javascript`); this one builds under a plain
+-- GHC so the pure attribute/rendering logic can be tested in CI.
+test-suite Halogen-core-test-native
+    type:             exitcode-stdio-1.0
+    default-language: GHC2021
+    hs-source-dirs:   test-native
+    main-is:          Spec.hs
+    other-modules:    Halogen.Svg.AttributesSpec
+    ghc-options:      -Wall
+    build-depends:
+        base >= 4.20
+      , text
+      , row-types
+      , haskell-halogen-core
+      , hspec
