@@ -1,4 +1,4 @@
-module Test.Main (main) where
+module Main (main) where
 
 import Test.GHCJS (ghcjsSpec)
 import Test.Hspec (hspec)

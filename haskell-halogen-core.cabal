@@ -198,7 +198,6 @@ test-suite Halogen-core-test
     type:             exitcode-stdio-1.0
     hs-source-dirs:   test
     main-is:          Test/Main.hs
-    ghc-options:      -main-is Test.Main
     other-modules:
         Test.Native
         Test.GHCJS
