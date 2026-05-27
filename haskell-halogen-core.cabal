@@ -189,26 +189,17 @@ executable halogen-core-prototype
   build-depends:    haskell-halogen-core
   hs-source-dirs:   app
 
+-- A single suite with two spec namespaces (see `Test.Main`):
+--   * `Test.Native` always runs (pure logic, builds under any GHC);
+--   * `Test.GHCJS`  is gated behind `#if defined(javascript_HOST_ARCH)`
+--     and degrades to an `xdescribe` no-op under a native GHC.
 test-suite Halogen-core-test
     import: commons
     type:             exitcode-stdio-1.0
     hs-source-dirs:   test
-    main-is:          Test.hs
+    main-is:          Test/Main.hs
+    ghc-options:      -main-is Test.Main
+    other-modules:
+        Test.Native
+        Test.GHCJS
     build-depends:    protolude, haskell-halogen-core, hspec
-
--- Native (non-JavaScript) unit tests. The suite above is GHC-JS only
--- (it uses `foreign import javascript`); this one builds under a plain
--- GHC so the pure attribute/rendering logic can be tested in CI.
-test-suite Halogen-core-test-native
-    type:             exitcode-stdio-1.0
-    default-language: GHC2021
-    hs-source-dirs:   test-native
-    main-is:          Spec.hs
-    other-modules:    Halogen.Svg.AttributesSpec
-    ghc-options:      -Wall
-    build-depends:
-        base >= 4.20
-      , text
-      , row-types
-      , haskell-halogen-core
-      , hspec

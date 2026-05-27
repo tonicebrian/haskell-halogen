@@ -4,8 +4,11 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeOperators #-}
 
--- | Regression coverage for the four @Halogen.Svg.Attributes@ gaps fixed
--- to bring the module to parity with @purescript-halogen-svg-elems@:
+-- | Native (non-JavaScript) test specs — these run under a plain GHC and
+-- in ordinary CI.
+--
+-- Currently this covers the four @Halogen.Svg.Attributes@ gaps fixed to
+-- bring the module to parity with @purescript-halogen-svg-elems@:
 --
 --   1. Dimension/radius setters (@x@, @y@, @width@, @height@, @r@, @rx@,
 --      @ry@, @strokeWidth@) were constrained @HasType \"…\" Text@ while
@@ -15,16 +18,17 @@
 --      and only type-checks once the constraints say @Double@.
 --   2. The @transform@ setter previously emitted the attribute name
 --      @\"Transformation\"@ (and leaned on Clay's un-exported
---      @Transformation@). 'transformAttr' pins both the correct
---      attribute name and the rendered value.
+--      @Transformation@). 'attrNameValue' pins both the correct attribute
+--      name and the rendered value.
 --   3. Path-command smart constructors @m@/@l@/@q@/@z@ (with
 --      'CommandPositionReference') were missing entirely.
 --   4. 'Color', 'FontSize' and 'Transformation' are re-exported from the
 --      module — the import list below fails to compile if they regress.
-module Halogen.Svg.AttributesSpec (spec) where
+module Test.Native (nativeSpec) where
 
 import Data.Row (type (.==))
 import Data.Text (Text)
+import qualified Halogen.HTML.Core as HC
 import Halogen.HTML.Core (AttrName (..))
 import Halogen.HTML.Properties (IProp (..))
 import Halogen.Svg.Attributes
@@ -39,7 +43,6 @@ import Halogen.Svg.Attributes
 import qualified Halogen.Svg.Attributes as SA
 import qualified Halogen.Svg.Elements as SE
 import Halogen.VDom.DOM.Prop (Prop (..))
-import qualified Halogen.HTML.Core as HC
 import Test.Hspec (Spec, describe, it, shouldBe)
 import Prelude
 
@@ -87,8 +90,8 @@ _reExportedFontSize = Nothing
 _reExportedTransformation :: Maybe Transformation
 _reExportedTransformation = Nothing
 
-spec :: Spec
-spec = do
+nativeSpec :: Spec
+nativeSpec = do
   describe "Halogen.Svg.Attributes path commands (gap 3)" $ do
     it "m/l render absolute (uppercase) and relative (lowercase) forms" $ do
       SA.m Abs 1.0 2.0 `shouldBe` PathCommand "M 1.0 2.0"
